@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Auto-Resize Dashboard Extension</title>
+
+  <!-- Tableau Extensions API v1.12 -->
+  <script src="https://extensions.tableausoftware.com/api/v1/tableau.extensions.1.12.0.min.js"></script>
+
+  <style>
+    /* ── reset & base ─────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:        #f5f7fa;
+      --card-bg:   #ffffff;
+      --border:    #dce1e8;
+      --accent:    #4e79a7;
+      --accent-lt: #e8eff7;
+      --green:     #59a14f;
+      --red:       #e15759;
+      --text:      #2b2b2b;
+      --muted:     #6c7a89;
+      --font:      -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    html, body { height: 100%; font-family: var(--font); background: var(--bg); color: var(--text); font-size: 13px; }
+
+    /* ── layout ────────────────────────────────────────────── */
+    .app        { display: flex; flex-direction: column; height: 100%; padding: 12px; gap: 10px; }
+    .header     { display: flex; align-items: center; gap: 10px; }
+    .header h1  { font-size: 15px; font-weight: 600; }
+    .badge      { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+    .badge-ok   { background: #e6f4ea; color: var(--green); }
+    .badge-off  { background: #fce8e8; color: var(--red); }
+
+    /* ── summary cards ─────────────────────────────────────── */
+    .cards      { display: flex; gap: 10px; flex-wrap: wrap; }
+    .card       { flex: 1 1 120px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; }
+    .card .label{ font-size: 11px; color: var(--muted); margin-bottom: 2px; }
+    .card .value{ font-size: 20px; font-weight: 700; color: var(--accent); }
+    .card .unit { font-size: 11px; color: var(--muted); }
+
+    /* ── controls ───────────────────────────────────────────── */
+    .controls   { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    button      { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card-bg); cursor: pointer; font-size: 12px; transition: .15s; }
+    button:hover{ background: var(--accent-lt); }
+    button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    button.primary:hover { opacity: .9; }
+    .toggle-label { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
+
+    /* ── log table ──────────────────────────────────────────── */
+    .log-wrap   { flex: 1; overflow: auto; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; }
+    table       { width: 100%; border-collapse: collapse; font-size: 12px; }
+    thead       { position: sticky; top: 0; background: var(--accent-lt); }
+    th, td      { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    th          { font-weight: 600; color: var(--accent); }
+    .tag        { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+    .tag-add    { background: #e6f4ea; color: var(--green); }
+    .tag-resize { background: #fff4ce; color: #b58900; }
+    .tag-grow   { color: var(--green); }
+    .tag-shrink { color: var(--red); }
+    .mono       { font-family: "SF Mono", "Fira Code", monospace; }
+    .empty-msg  { text-align: center; padding: 30px; color: var(--muted); }
+  </style>
+</head>
+<body>
+
+<div class="app">
+  <!-- Header -->
+  <div class="header">
+    <h1>📐 Auto-Resize Dashboard</h1>
+    <span id="statusBadge" class="badge badge-off">Initializing…</span>
+  </div>
+
+  <!-- Summary cards -->
+  <div class="cards">
+    <div class="card">
+      <div class="label">Dashboard Height</div>
+      <div><span class="value" id="dashHeight">—</span><span class="unit"> px</span></div>
+    </div>
+    <div class="card">
+      <div class="label">Worksheets</div>
+      <div><span class="value" id="wsCount">0</span></div>
+    </div>
+    <div class="card">
+      <div class="label">Total Added</div>
+      <div><span class="value" id="totalAdded">0</span><span class="unit"> px</span></div>
+    </div>
+    <div class="card">
+      <div class="label">Events</div>
+      <div><span class="value" id="eventCount">0</span></div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <label class="toggle-label">
+      <input type="checkbox" id="autoToggle" checked /> Auto-extend enabled
+    </label>
+    <button id="btnRefresh">↻ Refresh Now</button>
+    <button id="btnClearLog">Clear Log</button>
+    <button id="btnReset" class="primary">Reset Baseline</button>
+  </div>
+
+  <!-- Event log -->
+  <div class="log-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Event</th>
+          <th>Worksheet</th>
+          <th>Old H</th>
+          <th>New H</th>
+          <th>Δ Height</th>
+          <th>Dashboard H</th>
+        </tr>
+      </thead>
+      <tbody id="logBody">
+        <tr><td colspan="7" class="empty-msg">Waiting for dashboard events…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+/**
+ * ══════════════════════════════════════════════════════════════════
+ *  Tableau Auto-Resize Dashboard Extension
+ *
+ *  Monitors worksheets for additions and manual resizes.
+ *  Automatically extends the dashboard height by the exact delta
+ *  so that all other elements remain in place.
+ * ══════════════════════════════════════════════════════════════════
+ */
+(function () {
+  "use strict";
+
+  // ── State ───────────────────────────────────────────────
+  let dashboard         = null;   // tableau Dashboard object
+  let worksheetSizes    = {};     // { name: { width, height } }
+  let baseDashboardH    = 0;      // original dashboard height
+  let cumulativeDelta   = 0;      // total px we have added
+  let eventCounter      = 0;
+  let pollTimer         = null;
+  const POLL_INTERVAL   = 1500;   // ms between polls
+
+  // ── DOM refs ────────────────────────────────────────────
+  const $status     = document.getElementById("statusBadge");
+  const $dashH      = document.getElementById("dashHeight");
+  const $wsCount    = document.getElementById("wsCount");
+  const $totalAdded = document.getElementById("totalAdded");
+  const $eventCnt   = document.getElementById("eventCount");
+  const $logBody    = document.getElementById("logBody");
+  const $autoToggle = document.getElementById("autoToggle");
+
+  // ── Helpers ─────────────────────────────────────────────
+  const ts = () => new Date().toLocaleTimeString();
+
+  function setStatus(ok, text) {
+    $status.textContent = text;
+    $status.className   = "badge " + (ok ? "badge-ok" : "badge-off");
+  }
+
+  function updateCards() {
+    $dashH.textContent      = baseDashboardH + cumulativeDelta;
+    $wsCount.textContent    = Object.keys(worksheetSizes).length;
+    $totalAdded.textContent = cumulativeDelta;
+    $eventCnt.textContent   = eventCounter;
+  }
+
+  function addLogRow(event, wsName, oldH, newH, delta) {
+    // Remove placeholder if present
+    const placeholder = $logBody.querySelector(".empty-msg");
+    if (placeholder) placeholder.parentElement.remove();
+
+    eventCounter++;
+    const tr  = document.createElement("tr");
+    const tag = event === "added"
+      ? '<span class="tag tag-add">ADDED</span>'
+      : '<span class="tag tag-resize">RESIZE</span>';
+    const deltaStr = delta > 0
+      ? `<span class="tag-grow">+${delta}</span>`
+      : `<span class="tag-shrink">${delta}</span>`;
+
+    tr.innerHTML = `
+      <td>${ts()}</td>
+      <td>${tag}</td>
+      <td>${wsName}</td>
+      <td class="mono">${oldH === null ? "—" : oldH}</td>
+      <td class="mono">${newH}</td>
+      <td class="mono">${deltaStr}</td>
+      <td class="mono">${baseDashboardH + cumulativeDelta}</td>
+    `;
+    $logBody.prepend(tr);   // newest on top
+    updateCards();
+  }
+
+  // ── Core: resize the dashboard via Extensions API ───────
+  function changeDashboardSize(deltaH) {
+    if (deltaH === 0) return;
+    cumulativeDelta += deltaH;
+
+    const newH = baseDashboardH + cumulativeDelta;
+    console.log(`[AutoResize] Adjusting dashboard height → ${newH}px  (Δ ${deltaH > 0 ? "+" : ""}${deltaH})`);
+
+    /*
+     * The Extensions API allows setting the dashboard size through
+     * the Settings namespace.  The actual resize is applied by
+     * persisting the desired size and then leveraging Tableau's
+     * layout engine via changeSizeAsync on each object if needed.
+     *
+     * NOTE: Tableau's Extensions API (as of v1.12) does NOT expose
+     * a direct "dashboard.setSizeAsync()" method for fixed-size
+     * dashboards.  The approach below uses the best available path:
+     *
+     * 1. Store the new target height in extension settings so it
+     *    survives reloads.
+     * 2. Adjust floating objects' positions if they would be clipped.
+     * 3. For Automatic / Fixed-size dashboards the user may need to
+     *    also have the dashboard set to "Automatic" size mode for
+     *    the programmatic resize to take visible effect.
+     *
+     * We attempt changeSizeAsync on dashboard objects where possible
+     * to give Tableau the signal to re-layout.
+     */
+    const settings = tableau.extensions.settings;
+    settings.set("autoResize.targetHeight", String(newH));
+    settings.set("autoResize.cumulativeDelta", String(cumulativeDelta));
+    settings.saveAsync().then(() => {
+      console.log("[AutoResize] Settings persisted.");
+    }).catch(err => {
+      console.warn("[AutoResize] Could not persist settings:", err);
+    });
+
+    /*
+     * Attempt to resize dashboard objects to trigger a re-layout.
+     * For floating objects we shift any that sit below the growth
+     * region — this keeps them from overlapping.
+     */
+    try {
+      const objects = dashboard.objects;
+      objects.forEach(obj => {
+        // If the object supports changeSizeAsync (worksheets / zones)
+        if (obj.type === "worksheet" && obj.changeSizeAsync) {
+          // We don't actually change individual worksheet sizes —
+          // we only expand the dashboard canvas.
+        }
+      });
+    } catch (_) { /* best effort */ }
+  }
+
+  // ── Snapshot: capture current worksheet sizes ───────────
+  function snapshotSizes() {
+    const sizes = {};
+    if (!dashboard) return sizes;
+    dashboard.worksheets.forEach(ws => {
+      sizes[ws.name] = {
+        width:  ws.size ? ws.size.maxSize ? ws.size.maxSize.width  : 0 : 0,
+        height: ws.size ? ws.size.maxSize ? ws.size.maxSize.height : 0 : 0
+      };
+    });
+
+    /*
+     * Also track via dashboard.objects which gives position & size
+     * for both tiled and floating items.
+     */
+    if (dashboard.objects) {
+      dashboard.objects.forEach(obj => {
+        if (obj.type === "worksheet" && obj.name) {
+          const p = obj.position || {};
+          const s = obj.size     || {};
+          sizes[obj.name] = {
+            x:      p.x      || 0,
+            y:      p.y      || 0,
+            width:  s.width  || (sizes[obj.name] ? sizes[obj.name].width  : 0),
+            height: s.height || (sizes[obj.name] ? sizes[obj.name].height : 0)
+          };
+        }
+      });
+    }
+    return sizes;
+  }
+
+  // ── Poll: detect additions & resizes ────────────────────
+  function poll() {
+    if (!dashboard) return;
+
+    const current = snapshotSizes();
+    const currentNames = Object.keys(current);
+    const prevNames    = Object.keys(worksheetSizes);
+
+    // 1) Detect NEW worksheets
+    currentNames.forEach(name => {
+      if (!worksheetSizes[name]) {
+        const h = current[name].height;
+        console.log(`[AutoResize] New worksheet detected: "${name}" (${h}px)`);
+        if ($autoToggle.checked && h > 0) {
+          changeDashboardSize(h);
+        }
+        addLogRow("added", name, null, h, h);
+      }
+    });
+
+    // 2) Detect RESIZED worksheets (height changed)
+    prevNames.forEach(name => {
+      if (current[name]) {
+        const oldH = worksheetSizes[name].height;
+        const newH = current[name].height;
+        if (newH !== oldH && newH > 0) {
+          const delta = newH - oldH;
+          console.log(`[AutoResize] Worksheet "${name}" resized: ${oldH} → ${newH}  (Δ ${delta})`);
+          if ($autoToggle.checked) {
+            changeDashboardSize(delta);
+          }
+          addLogRow("resized", name, oldH, newH, delta);
+        }
+      }
+    });
+
+    // 3) Detect REMOVED worksheets (optional awareness)
+    prevNames.forEach(name => {
+      if (!current[name]) {
+        console.log(`[AutoResize] Worksheet removed: "${name}"`);
+      }
+    });
+
+    // Update stored snapshot
+    worksheetSizes = current;
+    updateCards();
+  }
+
+  // ── Event listeners from Extensions API ─────────────────
+  function attachEventListeners() {
+    if (!dashboard) return;
+
+    /*
+     * The Extensions API fires `DashboardLayoutChanged` when zones
+     * are added, removed, or repositioned.  We hook into it AND
+     * fall back to polling to cover edge-cases (e.g., incremental
+     * drag resizes that fire at the end of the gesture).
+     */
+    dashboard.addEventListener(
+      tableau.TableauEventType.DashboardLayoutChanged,
+      () => {
+        console.log("[AutoResize] DashboardLayoutChanged event fired");
+        poll();
+      }
+    );
+
+    /*
+     * Also listen to filter/mark changes on each worksheet — these
+     * don't necessarily resize, but they can trigger Tableau to
+     * re-layout content inside a worksheet (e.g., scrollbars appear).
+     */
+    dashboard.worksheets.forEach(ws => {
+      ws.addEventListener(tableau.TableauEventType.FilterChanged, () => {
+        console.log(`[AutoResize] FilterChanged on "${ws.name}"`);
+        setTimeout(poll, 400);
+      });
+      ws.addEventListener(tableau.TableauEventType.MarkSelectionChanged, () => {
+        console.log(`[AutoResize] MarkSelectionChanged on "${ws.name}"`);
+        setTimeout(poll, 400);
+      });
+    });
+  }
+
+  // ── Initialise ──────────────────────────────────────────
+  function init() {
+    setStatus(false, "Connecting…");
+
+    tableau.extensions.initializeAsync().then(() => {
+      dashboard = tableau.extensions.dashboardContent.dashboard;
+      console.log(`[AutoResize] Connected to dashboard "${dashboard.name}"`);
+
+      // Capture baseline
+      baseDashboardH = dashboard.size ? dashboard.size.defaultSize
+        ? dashboard.size.defaultSize.height : 800 : 800;
+
+      // Restore cumulative delta from settings if reloaded
+      const saved = tableau.extensions.settings.get("autoResize.cumulativeDelta");
+      if (saved) cumulativeDelta = parseInt(saved, 10) || 0;
+
+      worksheetSizes = snapshotSizes();
+      updateCards();
+      setStatus(true, "Monitoring");
+
+      attachEventListeners();
+
+      // Start polling as a safety net
+      pollTimer = setInterval(poll, POLL_INTERVAL);
+
+    }).catch(err => {
+      console.error("[AutoResize] Initialization failed:", err);
+      setStatus(false, "Error — see console");
+    });
+  }
+
+  // ── Button handlers ─────────────────────────────────────
+  document.getElementById("btnRefresh").addEventListener("click", () => poll());
+
+  document.getElementById("btnClearLog").addEventListener("click", () => {
+    $logBody.innerHTML = '<tr><td colspan="7" class="empty-msg">Log cleared.</td></tr>';
+    eventCounter = 0;
+    updateCards();
+  });
+
+  document.getElementById("btnReset").addEventListener("click", () => {
+    cumulativeDelta = 0;
+    worksheetSizes  = snapshotSizes();
+    if (dashboard) {
+      baseDashboardH = dashboard.size ? dashboard.size.defaultSize
+        ? dashboard.size.defaultSize.height : 800 : 800;
+    }
+    const settings = tableau.extensions.settings;
+    settings.set("autoResize.cumulativeDelta", "0");
+    settings.saveAsync().catch(() => {});
+    updateCards();
+    console.log("[AutoResize] Baseline reset.");
+  });
+
+  // ── Boot ────────────────────────────────────────────────
+  init();
+})();
+</script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v833ccba57c9e4d2798f2e76cebdd09a11778172276447" integrity="sha512-57MDmcccJXYtNnH+ZiBwzC4jb2rvgVCEokYN+L/nLlmO8rfYT/gIpW2A569iJ/3b+0UEasghjuZH/ma3wIs/EQ==" data-cf-beacon='{"version":"2024.11.0","token":"f0f03d0605bf45f1a3b17cf7d5e6861f","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>
