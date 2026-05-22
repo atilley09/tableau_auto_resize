@@ -19,6 +19,7 @@
       --accent-lt: #e8eff7;
       --green:     #59a14f;
       --red:       #e15759;
+      --orange:    #f28e2b;
       --text:      #2b2b2b;
       --muted:     #6c7a89;
       --font:      -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -32,6 +33,52 @@
     .badge      { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
     .badge-ok   { background: #e6f4ea; color: var(--green); }
     .badge-off  { background: #fce8e8; color: var(--red); }
+    .badge-wait { background: #fff4ce; color: var(--orange); }
+
+    /* ── init-panel (prominent initialization status) ───────── */
+    .init-panel {
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px;
+      padding: 16px 20px; display: flex; flex-direction: column; gap: 10px;
+    }
+    .init-panel.hidden { display: none; }
+    .init-panel h2 { font-size: 14px; font-weight: 600; color: var(--accent); }
+    .init-step {
+      display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 4px 0;
+    }
+    .init-step .icon { width: 18px; text-align: center; flex-shrink: 0; font-size: 14px; }
+    .init-step .label { flex: 1; }
+    .init-step .detail { font-size: 11px; color: var(--muted); margin-left: 26px; margin-top: 1px; }
+    .init-step.pending  .icon { color: var(--muted); }
+    .init-step.running  .icon { color: var(--orange); }
+    .init-step.done     .icon { color: var(--green); }
+    .init-step.failed   .icon { color: var(--red); }
+    .init-step.failed  .label { color: var(--red); font-weight: 600; }
+    .init-elapsed { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    /* ── error / troubleshooting panel ──────────────────────── */
+    .error-panel {
+      background: #fff5f5; border: 1px solid #f5c6c6; border-radius: 10px;
+      padding: 16px 20px; display: flex; flex-direction: column; gap: 10px;
+    }
+    .error-panel.hidden { display: none; }
+    .error-panel h2 { font-size: 14px; font-weight: 600; color: var(--red); }
+    .error-msg {
+      background: #fce8e8; border-radius: 6px; padding: 10px 12px;
+      font-family: "SF Mono", "Fira Code", monospace; font-size: 11px;
+      color: var(--red); word-break: break-word; white-space: pre-wrap;
+      max-height: 120px; overflow: auto;
+    }
+    .troubleshoot-list { list-style: none; padding: 0; }
+    .troubleshoot-list li {
+      padding: 6px 0 6px 22px; position: relative; font-size: 12px; line-height: 1.5;
+    }
+    .troubleshoot-list li::before {
+      content: "→"; position: absolute; left: 4px; color: var(--accent); font-weight: 700;
+    }
+    .troubleshoot-list code {
+      background: #f0f2f5; padding: 1px 5px; border-radius: 3px; font-size: 11px;
+    }
+    .btn-row { display: flex; gap: 8px; margin-top: 4px; }
 
     /* ── summary cards ─────────────────────────────────────── */
     .cards      { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -46,6 +93,8 @@
     button:hover{ background: var(--accent-lt); }
     button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
     button.primary:hover { opacity: .9; }
+    button.danger  { background: var(--red); color: #fff; border-color: var(--red); }
+    button.danger:hover  { opacity: .9; }
     .toggle-label { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
 
     /* ── log table ──────────────────────────────────────────── */
@@ -61,6 +110,10 @@
     .tag-shrink { color: var(--red); }
     .mono       { font-family: "SF Mono", "Fira Code", monospace; }
     .empty-msg  { text-align: center; padding: 30px; color: var(--muted); }
+
+    /* ── spinner ────────────────────────────────────────────── */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { display: inline-block; animation: spin 1s linear infinite; }
   </style>
 </head>
 <body>
@@ -69,7 +122,46 @@
   <!-- Header -->
   <div class="header">
     <h1>📐 Auto-Resize Dashboard</h1>
-    <span id="statusBadge" class="badge badge-off">Initializing…</span>
+    <span id="statusBadge" class="badge badge-wait">Initializing…</span>
+  </div>
+
+  <!-- ═══ Initialization Progress Panel ═══ -->
+  <div class="init-panel" id="initPanel">
+    <h2>🔌 Connecting to Tableau…</h2>
+    <div class="init-step pending" id="stepApiCheck">
+      <span class="icon">○</span>
+      <span class="label">Check Tableau Extensions API availability</span>
+    </div>
+    <div class="init-step pending" id="stepInit">
+      <span class="icon">○</span>
+      <span class="label">Call <code>tableau.extensions.initializeAsync()</code></span>
+    </div>
+    <div class="init-step pending" id="stepDashboard">
+      <span class="icon">○</span>
+      <span class="label">Access dashboard content</span>
+    </div>
+    <div class="init-step pending" id="stepWorksheets">
+      <span class="icon">○</span>
+      <span class="label">Enumerate worksheets &amp; capture sizes</span>
+    </div>
+    <div class="init-step pending" id="stepEvents">
+      <span class="icon">○</span>
+      <span class="label">Attach event listeners &amp; start polling</span>
+    </div>
+    <div class="init-elapsed" id="initElapsed">Elapsed: 0 s</div>
+  </div>
+
+  <!-- ═══ Error / Troubleshooting Panel (hidden until needed) ═══ -->
+  <div class="error-panel hidden" id="errorPanel">
+    <h2>⚠️ Connection Failed</h2>
+    <div id="errorDescription" style="font-size:12px; line-height:1.6;"></div>
+    <div class="error-msg" id="errorMsg"></div>
+    <h3 style="font-size:13px; margin-top:6px; color:var(--text);">Troubleshooting Checklist</h3>
+    <ul class="troubleshoot-list" id="troubleshootList"></ul>
+    <div class="btn-row">
+      <button class="primary" id="btnRetry">🔄 Retry Connection</button>
+      <button id="btnCopyDebug">📋 Copy Debug Info</button>
+    </div>
   </div>
 
   <!-- Summary cards -->
@@ -131,10 +223,17 @@
  *  Monitors worksheets for additions and manual resizes.
  *  Automatically extends the dashboard height by the exact delta
  *  so that all other elements remain in place.
+ *
+ *  v1.1 — Enhanced diagnostics, timeout handling, retry support
  * ══════════════════════════════════════════════════════════════════
  */
 (function () {
   "use strict";
+
+  // ── Constants ───────────────────────────────────────────
+  const POLL_INTERVAL      = 1500;   // ms between polls
+  const INIT_TIMEOUT_MS    = 10000;  // 10 s — show failure if init hangs
+  const LOG_PREFIX         = "[AutoResize]";
 
   // ── State ───────────────────────────────────────────────
   let dashboard         = null;   // tableau Dashboard object
@@ -143,23 +242,44 @@
   let cumulativeDelta   = 0;      // total px we have added
   let eventCounter      = 0;
   let pollTimer         = null;
-  const POLL_INTERVAL   = 1500;   // ms between polls
+  let initTimerHandle   = null;   // for the 10-s timeout
+  let elapsedHandle     = null;   // for the elapsed-seconds counter
+  let initStartTime     = null;
+  let initCompleted     = false;
+  let debugLog          = [];     // collect all log lines for "Copy Debug Info"
 
   // ── DOM refs ────────────────────────────────────────────
-  const $status     = document.getElementById("statusBadge");
-  const $dashH      = document.getElementById("dashHeight");
-  const $wsCount    = document.getElementById("wsCount");
-  const $totalAdded = document.getElementById("totalAdded");
-  const $eventCnt   = document.getElementById("eventCount");
-  const $logBody    = document.getElementById("logBody");
-  const $autoToggle = document.getElementById("autoToggle");
+  const $status      = document.getElementById("statusBadge");
+  const $dashH       = document.getElementById("dashHeight");
+  const $wsCount     = document.getElementById("wsCount");
+  const $totalAdded  = document.getElementById("totalAdded");
+  const $eventCnt    = document.getElementById("eventCount");
+  const $logBody     = document.getElementById("logBody");
+  const $autoToggle  = document.getElementById("autoToggle");
+  const $initPanel   = document.getElementById("initPanel");
+  const $errorPanel  = document.getElementById("errorPanel");
+  const $errorMsg    = document.getElementById("errorMsg");
+  const $errorDesc   = document.getElementById("errorDescription");
+  const $troubleList = document.getElementById("troubleshootList");
+  const $initElapsed = document.getElementById("initElapsed");
+
+  // ── Enhanced Logging ────────────────────────────────────
+  function log(msg, level) {
+    const line = `${new Date().toISOString()} ${LOG_PREFIX} ${msg}`;
+    debugLog.push(line);
+    if (level === "error")      console.error(line);
+    else if (level === "warn")  console.warn(line);
+    else                        console.log(line);
+  }
 
   // ── Helpers ─────────────────────────────────────────────
   const ts = () => new Date().toLocaleTimeString();
 
   function setStatus(ok, text) {
     $status.textContent = text;
-    $status.className   = "badge " + (ok ? "badge-ok" : "badge-off");
+    if (ok === true)       $status.className = "badge badge-ok";
+    else if (ok === false) $status.className = "badge badge-off";
+    else                   $status.className = "badge badge-wait";   // null = waiting
   }
 
   function updateCards() {
@@ -169,8 +289,73 @@
     $eventCnt.textContent   = eventCounter;
   }
 
+  // ── Init-step UI helpers ────────────────────────────────
+  function setStep(id, state, extra) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.className = "init-step " + state;
+    const icon = el.querySelector(".icon");
+    if (state === "pending")  icon.textContent = "○";
+    if (state === "running")  { icon.textContent = "⟳"; icon.classList.add("spinner"); }
+    if (state === "done")     { icon.textContent = "✔"; icon.classList.remove("spinner"); }
+    if (state === "failed")   { icon.textContent = "✖"; icon.classList.remove("spinner"); }
+    // Optional detail line
+    if (extra) {
+      let detail = el.querySelector(".detail");
+      if (!detail) { detail = document.createElement("div"); detail.className = "detail"; el.appendChild(detail); }
+      detail.textContent = extra;
+    }
+  }
+
+  function startElapsedTimer() {
+    initStartTime = Date.now();
+    elapsedHandle = setInterval(() => {
+      const s = ((Date.now() - initStartTime) / 1000).toFixed(1);
+      $initElapsed.textContent = `Elapsed: ${s} s`;
+    }, 200);
+  }
+  function stopElapsedTimer() {
+    if (elapsedHandle) { clearInterval(elapsedHandle); elapsedHandle = null; }
+  }
+
+  // ── Show error / troubleshooting ────────────────────────
+  function showError(reason, errorObj, tips) {
+    stopElapsedTimer();
+    if (initTimerHandle) { clearTimeout(initTimerHandle); initTimerHandle = null; }
+    initCompleted = false;
+
+    setStatus(false, "Connection Failed");
+    $errorPanel.classList.remove("hidden");
+    $errorDesc.textContent = reason;
+
+    // Format error
+    let errText = "";
+    if (errorObj) {
+      if (typeof errorObj === "string") {
+        errText = errorObj;
+      } else if (errorObj instanceof Error) {
+        errText = errorObj.message + (errorObj.stack ? "\n\n" + errorObj.stack : "");
+      } else {
+        try { errText = JSON.stringify(errorObj, null, 2); }
+        catch (_) { errText = String(errorObj); }
+      }
+    }
+    $errorMsg.textContent = errText || "(no error details captured)";
+    $errorMsg.style.display = errText ? "block" : "none";
+
+    // Build troubleshooting tips
+    $troubleList.innerHTML = "";
+    (tips || []).forEach(tip => {
+      const li = document.createElement("li");
+      li.innerHTML = tip;
+      $troubleList.appendChild(li);
+    });
+
+    log("ERROR shown to user: " + reason + " | " + errText, "error");
+  }
+
+  // ── Event log row ───────────────────────────────────────
   function addLogRow(event, wsName, oldH, newH, delta) {
-    // Remove placeholder if present
     const placeholder = $logBody.querySelector(".empty-msg");
     if (placeholder) placeholder.parentElement.remove();
 
@@ -192,7 +377,7 @@
       <td class="mono">${deltaStr}</td>
       <td class="mono">${baseDashboardH + cumulativeDelta}</td>
     `;
-    $logBody.prepend(tr);   // newest on top
+    $logBody.prepend(tr);
     updateCards();
   }
 
@@ -202,51 +387,30 @@
     cumulativeDelta += deltaH;
 
     const newH = baseDashboardH + cumulativeDelta;
-    console.log(`[AutoResize] Adjusting dashboard height → ${newH}px  (Δ ${deltaH > 0 ? "+" : ""}${deltaH})`);
+    log(`Adjusting dashboard height → ${newH}px  (Δ ${deltaH > 0 ? "+" : ""}${deltaH})`);
 
-    /*
-     * The Extensions API allows setting the dashboard size through
-     * the Settings namespace.  The actual resize is applied by
-     * persisting the desired size and then leveraging Tableau's
-     * layout engine via changeSizeAsync on each object if needed.
-     *
-     * NOTE: Tableau's Extensions API (as of v1.12) does NOT expose
-     * a direct "dashboard.setSizeAsync()" method for fixed-size
-     * dashboards.  The approach below uses the best available path:
-     *
-     * 1. Store the new target height in extension settings so it
-     *    survives reloads.
-     * 2. Adjust floating objects' positions if they would be clipped.
-     * 3. For Automatic / Fixed-size dashboards the user may need to
-     *    also have the dashboard set to "Automatic" size mode for
-     *    the programmatic resize to take visible effect.
-     *
-     * We attempt changeSizeAsync on dashboard objects where possible
-     * to give Tableau the signal to re-layout.
-     */
-    const settings = tableau.extensions.settings;
-    settings.set("autoResize.targetHeight", String(newH));
-    settings.set("autoResize.cumulativeDelta", String(cumulativeDelta));
-    settings.saveAsync().then(() => {
-      console.log("[AutoResize] Settings persisted.");
-    }).catch(err => {
-      console.warn("[AutoResize] Could not persist settings:", err);
-    });
+    try {
+      const settings = tableau.extensions.settings;
+      settings.set("autoResize.targetHeight", String(newH));
+      settings.set("autoResize.cumulativeDelta", String(cumulativeDelta));
+      settings.saveAsync().then(() => {
+        log("Settings persisted successfully.");
+      }).catch(err => {
+        log("Could not persist settings: " + (err && err.message || err), "warn");
+      });
+    } catch (err) {
+      log("Exception while saving settings: " + (err && err.message || err), "error");
+    }
 
-    /*
-     * Attempt to resize dashboard objects to trigger a re-layout.
-     * For floating objects we shift any that sit below the growth
-     * region — this keeps them from overlapping.
-     */
     try {
       const objects = dashboard.objects;
-      objects.forEach(obj => {
-        // If the object supports changeSizeAsync (worksheets / zones)
-        if (obj.type === "worksheet" && obj.changeSizeAsync) {
-          // We don't actually change individual worksheet sizes —
-          // we only expand the dashboard canvas.
-        }
-      });
+      if (objects) {
+        objects.forEach(obj => {
+          if (obj.type === "worksheet" && obj.changeSizeAsync) {
+            // Only expand dashboard canvas — individual sizes unchanged.
+          }
+        });
+      }
     } catch (_) { /* best effort */ }
   }
 
@@ -254,30 +418,29 @@
   function snapshotSizes() {
     const sizes = {};
     if (!dashboard) return sizes;
-    dashboard.worksheets.forEach(ws => {
-      sizes[ws.name] = {
-        width:  ws.size ? ws.size.maxSize ? ws.size.maxSize.width  : 0 : 0,
-        height: ws.size ? ws.size.maxSize ? ws.size.maxSize.height : 0 : 0
-      };
-    });
-
-    /*
-     * Also track via dashboard.objects which gives position & size
-     * for both tiled and floating items.
-     */
-    if (dashboard.objects) {
-      dashboard.objects.forEach(obj => {
-        if (obj.type === "worksheet" && obj.name) {
-          const p = obj.position || {};
-          const s = obj.size     || {};
-          sizes[obj.name] = {
-            x:      p.x      || 0,
-            y:      p.y      || 0,
-            width:  s.width  || (sizes[obj.name] ? sizes[obj.name].width  : 0),
-            height: s.height || (sizes[obj.name] ? sizes[obj.name].height : 0)
-          };
-        }
+    try {
+      dashboard.worksheets.forEach(ws => {
+        sizes[ws.name] = {
+          width:  ws.size ? ws.size.maxSize ? ws.size.maxSize.width  : 0 : 0,
+          height: ws.size ? ws.size.maxSize ? ws.size.maxSize.height : 0 : 0
+        };
       });
+      if (dashboard.objects) {
+        dashboard.objects.forEach(obj => {
+          if (obj.type === "worksheet" && obj.name) {
+            const p = obj.position || {};
+            const s = obj.size     || {};
+            sizes[obj.name] = {
+              x:      p.x      || 0,
+              y:      p.y      || 0,
+              width:  s.width  || (sizes[obj.name] ? sizes[obj.name].width  : 0),
+              height: s.height || (sizes[obj.name] ? sizes[obj.name].height : 0)
+            };
+          }
+        });
+      }
+    } catch (err) {
+      log("Error during snapshotSizes: " + (err && err.message || err), "error");
     }
     return sizes;
   }
@@ -286,140 +449,430 @@
   function poll() {
     if (!dashboard) return;
 
-    const current = snapshotSizes();
-    const currentNames = Object.keys(current);
-    const prevNames    = Object.keys(worksheetSizes);
+    try {
+      const current = snapshotSizes();
+      const currentNames = Object.keys(current);
+      const prevNames    = Object.keys(worksheetSizes);
 
-    // 1) Detect NEW worksheets
-    currentNames.forEach(name => {
-      if (!worksheetSizes[name]) {
-        const h = current[name].height;
-        console.log(`[AutoResize] New worksheet detected: "${name}" (${h}px)`);
-        if ($autoToggle.checked && h > 0) {
-          changeDashboardSize(h);
-        }
-        addLogRow("added", name, null, h, h);
-      }
-    });
-
-    // 2) Detect RESIZED worksheets (height changed)
-    prevNames.forEach(name => {
-      if (current[name]) {
-        const oldH = worksheetSizes[name].height;
-        const newH = current[name].height;
-        if (newH !== oldH && newH > 0) {
-          const delta = newH - oldH;
-          console.log(`[AutoResize] Worksheet "${name}" resized: ${oldH} → ${newH}  (Δ ${delta})`);
-          if ($autoToggle.checked) {
-            changeDashboardSize(delta);
+      currentNames.forEach(name => {
+        if (!worksheetSizes[name]) {
+          const h = current[name].height;
+          log(`New worksheet detected: "${name}" (${h}px)`);
+          if ($autoToggle.checked && h > 0) {
+            changeDashboardSize(h);
           }
-          addLogRow("resized", name, oldH, newH, delta);
+          addLogRow("added", name, null, h, h);
         }
-      }
-    });
+      });
 
-    // 3) Detect REMOVED worksheets (optional awareness)
-    prevNames.forEach(name => {
-      if (!current[name]) {
-        console.log(`[AutoResize] Worksheet removed: "${name}"`);
-      }
-    });
+      prevNames.forEach(name => {
+        if (current[name]) {
+          const oldH = worksheetSizes[name].height;
+          const newH = current[name].height;
+          if (newH !== oldH && newH > 0) {
+            const delta = newH - oldH;
+            log(`Worksheet "${name}" resized: ${oldH} → ${newH}  (Δ ${delta})`);
+            if ($autoToggle.checked) {
+              changeDashboardSize(delta);
+            }
+            addLogRow("resized", name, oldH, newH, delta);
+          }
+        }
+      });
 
-    // Update stored snapshot
-    worksheetSizes = current;
-    updateCards();
+      prevNames.forEach(name => {
+        if (!current[name]) {
+          log(`Worksheet removed: "${name}"`);
+        }
+      });
+
+      worksheetSizes = current;
+      updateCards();
+    } catch (err) {
+      log("Error during poll: " + (err && err.message || err), "error");
+    }
   }
 
   // ── Event listeners from Extensions API ─────────────────
   function attachEventListeners() {
     if (!dashboard) return;
 
-    /*
-     * The Extensions API fires `DashboardLayoutChanged` when zones
-     * are added, removed, or repositioned.  We hook into it AND
-     * fall back to polling to cover edge-cases (e.g., incremental
-     * drag resizes that fire at the end of the gesture).
-     */
-    dashboard.addEventListener(
-      tableau.TableauEventType.DashboardLayoutChanged,
-      () => {
-        console.log("[AutoResize] DashboardLayoutChanged event fired");
-        poll();
-      }
-    );
+    try {
+      dashboard.addEventListener(
+        tableau.TableauEventType.DashboardLayoutChanged,
+        () => {
+          log("DashboardLayoutChanged event fired");
+          poll();
+        }
+      );
+      log("Attached DashboardLayoutChanged listener.");
+    } catch (err) {
+      log("Could not attach DashboardLayoutChanged: " + (err && err.message || err), "warn");
+    }
 
-    /*
-     * Also listen to filter/mark changes on each worksheet — these
-     * don't necessarily resize, but they can trigger Tableau to
-     * re-layout content inside a worksheet (e.g., scrollbars appear).
-     */
-    dashboard.worksheets.forEach(ws => {
-      ws.addEventListener(tableau.TableauEventType.FilterChanged, () => {
-        console.log(`[AutoResize] FilterChanged on "${ws.name}"`);
-        setTimeout(poll, 400);
+    try {
+      dashboard.worksheets.forEach(ws => {
+        ws.addEventListener(tableau.TableauEventType.FilterChanged, () => {
+          log(`FilterChanged on "${ws.name}"`);
+          setTimeout(poll, 400);
+        });
+        ws.addEventListener(tableau.TableauEventType.MarkSelectionChanged, () => {
+          log(`MarkSelectionChanged on "${ws.name}"`);
+          setTimeout(poll, 400);
+        });
+        log(`Attached Filter/Mark listeners on "${ws.name}".`);
       });
-      ws.addEventListener(tableau.TableauEventType.MarkSelectionChanged, () => {
-        console.log(`[AutoResize] MarkSelectionChanged on "${ws.name}"`);
-        setTimeout(poll, 400);
-      });
-    });
+    } catch (err) {
+      log("Could not attach worksheet listeners: " + (err && err.message || err), "warn");
+    }
   }
 
-  // ── Initialise ──────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════
+  //  INIT — with step-by-step progress, timeout, & retry
+  // ═══════════════════════════════════════════════════════
   function init() {
-    setStatus(false, "Connecting…");
+    // Reset UI for a fresh attempt
+    initCompleted = false;
+    $initPanel.classList.remove("hidden");
+    $errorPanel.classList.add("hidden");
+    ["stepApiCheck", "stepInit", "stepDashboard", "stepWorksheets", "stepEvents"]
+      .forEach(id => setStep(id, "pending"));
+    setStatus(null, "Connecting…");
+    startElapsedTimer();
 
-    tableau.extensions.initializeAsync().then(() => {
-      dashboard = tableau.extensions.dashboardContent.dashboard;
-      console.log(`[AutoResize] Connected to dashboard "${dashboard.name}"`);
+    log("=== Initialization started ===");
+    log("Page URL: " + window.location.href);
+    log("User-Agent: " + navigator.userAgent);
 
-      // Capture baseline
-      baseDashboardH = dashboard.size ? dashboard.size.defaultSize
-        ? dashboard.size.defaultSize.height : 800 : 800;
+    // ── 10-second timeout guard ────────────────────────
+    initTimerHandle = setTimeout(() => {
+      if (initCompleted) return;
+      log("TIMEOUT: initializeAsync() did not resolve within " + (INIT_TIMEOUT_MS / 1000) + " s", "error");
 
-      // Restore cumulative delta from settings if reloaded
-      const saved = tableau.extensions.settings.get("autoResize.cumulativeDelta");
-      if (saved) cumulativeDelta = parseInt(saved, 10) || 0;
+      // Mark whichever step was running as failed
+      ["stepApiCheck", "stepInit", "stepDashboard", "stepWorksheets", "stepEvents"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el && el.classList.contains("running")) setStep(id, "failed", "Timed out");
+      });
 
-      worksheetSizes = snapshotSizes();
-      updateCards();
+      showError(
+        "The extension did not finish connecting within 10 seconds. " +
+        "This usually means tableau.extensions.initializeAsync() is hanging — " +
+        "the Tableau host environment may not be responding.",
+        "initializeAsync() did not resolve or reject within " + (INIT_TIMEOUT_MS / 1000) + " seconds.",
+        [
+          "Make sure this extension is loaded <strong>inside Tableau Desktop</strong> (not in a standalone browser tab). " +
+            "Opening this HTML file directly in Chrome/Edge will always fail because the Tableau host API is absent.",
+          "Verify you dragged an <strong>Extension</strong> object onto a <strong>Dashboard</strong> tab (not a Worksheet or Story tab).",
+          "Try <strong>removing the extension zone</strong> from the dashboard and re-adding it fresh.",
+          "Check that the <code>.trex</code> manifest URL matches the URL serving this HTML file. " +
+            "Open the URL from the <code>&lt;url&gt;</code> tag in a browser — it should show this page.",
+          "If you are on <strong>Tableau Server / Cloud</strong>, ensure the extension URL is added to the " +
+            "<strong>Extension Safe List</strong> (Admin → Extensions).",
+          "Close and reopen the workbook — Tableau occasionally caches a stale extension state.",
+          "Open <strong>Developer Tools → Console</strong> (right-click the extension → Inspect) for additional errors."
+        ]
+      );
+    }, INIT_TIMEOUT_MS);
+
+    // ── Step 1: Check API availability ────────────────
+    setStep("stepApiCheck", "running");
+    log("Step 1: Checking if 'tableau' global and Extensions API are available…");
+
+    try {
+      if (typeof tableau === "undefined") {
+        throw new Error("The global 'tableau' object is undefined. The Extensions API script may not have loaded.");
+      }
+      if (!tableau.extensions) {
+        throw new Error("'tableau.extensions' is undefined. The Extensions API loaded but the extensions namespace is missing.");
+      }
+      if (typeof tableau.extensions.initializeAsync !== "function") {
+        throw new Error("'tableau.extensions.initializeAsync' is not a function. The API version may be incompatible.");
+      }
+      log("Step 1 ✔ — tableau.extensions.initializeAsync is available.");
+      setStep("stepApiCheck", "done", "API object found");
+    } catch (apiErr) {
+      log("Step 1 FAILED: " + apiErr.message, "error");
+      setStep("stepApiCheck", "failed", apiErr.message);
+      showError(
+        "The Tableau Extensions API is not available on this page.",
+        apiErr,
+        [
+          "This file must be loaded <strong>inside Tableau Desktop or Server</strong> — not in a standalone browser.",
+          "If you opened this file directly in Chrome/Edge/Firefox, that is expected to fail. " +
+            "Load it via the <strong>Extension</strong> object in a Tableau Dashboard.",
+          "Check the browser console for a <code>net::ERR</code> or 404 error loading <code>tableau.extensions.1.12.0.min.js</code>. " +
+            "A firewall may be blocking <code>extensions.tableausoftware.com</code>."
+        ]
+      );
+      return; // stop — no point continuing
+    }
+
+    // ── Step 2: Call initializeAsync ──────────────────
+    setStep("stepInit", "running");
+    log("Step 2: Calling tableau.extensions.initializeAsync()…");
+
+    let initPromise;
+    try {
+      initPromise = tableau.extensions.initializeAsync();
+    } catch (syncErr) {
+      log("Step 2 FAILED (synchronous throw): " + syncErr.message, "error");
+      setStep("stepInit", "failed", syncErr.message);
+      showError(
+        "initializeAsync() threw an error immediately (before returning a Promise).",
+        syncErr,
+        [
+          "This is unusual — it may indicate an API version mismatch.",
+          "Try clearing your browser cache inside Tableau (right-click extension → Reload).",
+          "Ensure the <code>min-api-version</code> in your <code>.trex</code> file is ≤ the Tableau version you are using."
+        ]
+      );
+      return;
+    }
+
+    if (!initPromise || typeof initPromise.then !== "function") {
+      log("Step 2 FAILED: initializeAsync() did not return a Promise.", "error");
+      setStep("stepInit", "failed", "No Promise returned");
+      showError(
+        "initializeAsync() did not return a Promise. The API may be in an unexpected state.",
+        "Return value: " + String(initPromise),
+        [
+          "Try reloading the extension (right-click → Reload).",
+          "Remove and re-add the extension zone on the dashboard."
+        ]
+      );
+      return;
+    }
+
+    initPromise.then(() => {
+      if (initCompleted) return; // guard against double-fire
+      log("Step 2 ✔ — initializeAsync() resolved successfully.");
+      setStep("stepInit", "done", "Promise resolved");
+
+      // ── Step 3: Access dashboard content ─────────
+      setStep("stepDashboard", "running");
+      log("Step 3: Accessing tableau.extensions.dashboardContent.dashboard…");
+
+      try {
+        if (!tableau.extensions.dashboardContent) {
+          throw new Error("dashboardContent is null/undefined. The extension may not be on a Dashboard tab.");
+        }
+        dashboard = tableau.extensions.dashboardContent.dashboard;
+        if (!dashboard) {
+          throw new Error("dashboardContent.dashboard is null/undefined.");
+        }
+        log(`Step 3 ✔ — Connected to dashboard "${dashboard.name}".`);
+        setStep("stepDashboard", "done", `Dashboard: "${dashboard.name}"`);
+      } catch (dashErr) {
+        log("Step 3 FAILED: " + dashErr.message, "error");
+        setStep("stepDashboard", "failed", dashErr.message);
+        showError(
+          "Connected to Tableau, but could not access the dashboard.",
+          dashErr,
+          [
+            "Make sure the extension is placed on a <strong>Dashboard</strong> tab, not a Worksheet or Story tab.",
+            "Try removing and re-adding the extension zone."
+          ]
+        );
+        return;
+      }
+
+      // ── Step 4: Enumerate worksheets ─────────────
+      setStep("stepWorksheets", "running");
+      log("Step 4: Enumerating worksheets & capturing baseline sizes…");
+
+      try {
+        baseDashboardH = 800; // safe default
+        if (dashboard.size && dashboard.size.defaultSize && dashboard.size.defaultSize.height) {
+          baseDashboardH = dashboard.size.defaultSize.height;
+        }
+        log(`  Baseline dashboard height: ${baseDashboardH}px`);
+
+        const saved = tableau.extensions.settings.get("autoResize.cumulativeDelta");
+        if (saved) {
+          cumulativeDelta = parseInt(saved, 10) || 0;
+          log(`  Restored cumulativeDelta from settings: ${cumulativeDelta}px`);
+        }
+
+        worksheetSizes = snapshotSizes();
+        const wsNames = Object.keys(worksheetSizes);
+        log(`  Found ${wsNames.length} worksheet(s): [${wsNames.join(", ")}]`);
+        wsNames.forEach(name => {
+          const s = worksheetSizes[name];
+          log(`    "${name}" — ${s.width}×${s.height} at (${s.x || 0}, ${s.y || 0})`);
+        });
+
+        updateCards();
+        setStep("stepWorksheets", "done", `${wsNames.length} worksheet(s)`);
+        log("Step 4 ✔ — Worksheets enumerated.");
+      } catch (wsErr) {
+        log("Step 4 FAILED: " + wsErr.message, "error");
+        setStep("stepWorksheets", "failed", wsErr.message);
+        showError(
+          "Could not read worksheet information from the dashboard.",
+          wsErr,
+          [
+            "The dashboard may not have any worksheets yet — add at least one and retry.",
+            "Check the console for further details."
+          ]
+        );
+        return;
+      }
+
+      // ── Step 5: Attach events & start polling ───
+      setStep("stepEvents", "running");
+      log("Step 5: Attaching event listeners & starting poll timer…");
+
+      try {
+        attachEventListeners();
+        pollTimer = setInterval(poll, POLL_INTERVAL);
+        log(`Step 5 ✔ — Polling every ${POLL_INTERVAL}ms. Event listeners attached.`);
+        setStep("stepEvents", "done", `Polling every ${POLL_INTERVAL / 1000}s`);
+      } catch (evErr) {
+        log("Step 5 FAILED: " + evErr.message, "error");
+        setStep("stepEvents", "failed", evErr.message);
+        showError(
+          "Could not attach event listeners or start polling.",
+          evErr,
+          [
+            "This is unusual. Try reloading the extension.",
+            "Check the console for more details."
+          ]
+        );
+        return;
+      }
+
+      // ── All done! ───────────────────────────────
+      initCompleted = true;
+      stopElapsedTimer();
+      if (initTimerHandle) { clearTimeout(initTimerHandle); initTimerHandle = null; }
       setStatus(true, "Monitoring");
+      log("=== Initialization complete — extension is active ===");
 
-      attachEventListeners();
-
-      // Start polling as a safety net
-      pollTimer = setInterval(poll, POLL_INTERVAL);
+      // Collapse the init panel after a short delay so the user can see the success checkmarks
+      setTimeout(() => { $initPanel.classList.add("hidden"); }, 2000);
 
     }).catch(err => {
-      console.error("[AutoResize] Initialization failed:", err);
-      setStatus(false, "Error — see console");
+      if (initCompleted) return;
+      const msg = (err && err.message) || String(err);
+      log("Step 2 FAILED (Promise rejected): " + msg, "error");
+      setStep("stepInit", "failed", msg);
+
+      // Provide context-aware troubleshooting
+      let tips = [
+        "The most common cause is opening this page <strong>outside of Tableau</strong>. " +
+          "The Extensions API only works inside a Tableau Dashboard extension zone.",
+        "If you <em>are</em> inside Tableau, try <strong>removing and re-adding</strong> the extension.",
+        "Ensure the URL in your <code>.trex</code> file exactly matches where this HTML is hosted.",
+        "Right-click the extension zone → <strong>Reload</strong> to re-attempt."
+      ];
+
+      if (msg.toLowerCase().includes("permission")) {
+        tips.unshift("Tableau may have <strong>blocked</strong> this extension. " +
+          "Check Dashboard → Extensions → allow this extension.");
+      }
+      if (msg.toLowerCase().includes("cross-origin") || msg.toLowerCase().includes("cors")) {
+        tips.unshift("A <strong>CORS / cross-origin</strong> error was detected. " +
+          "Ensure the HTML is served over HTTPS if the Tableau environment requires it.");
+      }
+
+      showError(
+        "tableau.extensions.initializeAsync() failed. " +
+        "The Tableau host rejected the connection or the extension is not running inside Tableau.",
+        err,
+        tips
+      );
     });
   }
 
   // ── Button handlers ─────────────────────────────────────
-  document.getElementById("btnRefresh").addEventListener("click", () => poll());
+  document.getElementById("btnRefresh").addEventListener("click", () => {
+    log("Manual refresh triggered by user.");
+    poll();
+  });
 
   document.getElementById("btnClearLog").addEventListener("click", () => {
     $logBody.innerHTML = '<tr><td colspan="7" class="empty-msg">Log cleared.</td></tr>';
     eventCounter = 0;
     updateCards();
+    log("Event log cleared by user.");
   });
 
   document.getElementById("btnReset").addEventListener("click", () => {
     cumulativeDelta = 0;
     worksheetSizes  = snapshotSizes();
     if (dashboard) {
-      baseDashboardH = dashboard.size ? dashboard.size.defaultSize
-        ? dashboard.size.defaultSize.height : 800 : 800;
+      baseDashboardH = 800;
+      if (dashboard.size && dashboard.size.defaultSize && dashboard.size.defaultSize.height) {
+        baseDashboardH = dashboard.size.defaultSize.height;
+      }
     }
-    const settings = tableau.extensions.settings;
-    settings.set("autoResize.cumulativeDelta", "0");
-    settings.saveAsync().catch(() => {});
+    try {
+      const settings = tableau.extensions.settings;
+      settings.set("autoResize.cumulativeDelta", "0");
+      settings.saveAsync().catch(() => {});
+    } catch (_) {}
     updateCards();
-    console.log("[AutoResize] Baseline reset.");
+    log("Baseline reset by user.");
+  });
+
+  // ── Retry button ────────────────────────────────────────
+  document.getElementById("btnRetry").addEventListener("click", () => {
+    log("=== Retry requested by user ===");
+    // Clean up any running timers
+    if (pollTimer)       { clearInterval(pollTimer); pollTimer = null; }
+    if (initTimerHandle) { clearTimeout(initTimerHandle); initTimerHandle = null; }
+    stopElapsedTimer();
+    dashboard      = null;
+    worksheetSizes = {};
+    baseDashboardH = 0;
+    cumulativeDelta= 0;
+    eventCounter   = 0;
+    updateCards();
+    init();
+  });
+
+  // ── Copy Debug Info button ──────────────────────────────
+  document.getElementById("btnCopyDebug").addEventListener("click", () => {
+    const info = [
+      "=== Auto-Resize Extension Debug Info ===",
+      "Timestamp: " + new Date().toISOString(),
+      "Page URL: " + window.location.href,
+      "User-Agent: " + navigator.userAgent,
+      "tableau defined: " + (typeof tableau !== "undefined"),
+      "tableau.extensions defined: " + (typeof tableau !== "undefined" && !!tableau.extensions),
+      "initCompleted: " + initCompleted,
+      "dashboard: " + (dashboard ? dashboard.name : "null"),
+      "",
+      "=== Full Log ===",
+      ...debugLog
+    ].join("\n");
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(info).then(() => {
+        log("Debug info copied to clipboard.");
+        const btn = document.getElementById("btnCopyDebug");
+        const orig = btn.textContent;
+        btn.textContent = "✅ Copied!";
+        setTimeout(() => { btn.textContent = orig; }, 2000);
+      }).catch(() => {
+        prompt("Copy the text below:", info);
+      });
+    } else {
+      prompt("Copy the text below:", info);
+    }
+  });
+
+  // ── Global error handler ────────────────────────────────
+  window.addEventListener("error", (e) => {
+    log("Uncaught error: " + (e.message || e) + " at " + (e.filename || "") + ":" + (e.lineno || ""), "error");
+  });
+  window.addEventListener("unhandledrejection", (e) => {
+    log("Unhandled Promise rejection: " + (e.reason && e.reason.message || e.reason || e), "error");
   });
 
   // ── Boot ────────────────────────────────────────────────
+  log("Extension script loaded. Starting init…");
   init();
 })();
 </script>
